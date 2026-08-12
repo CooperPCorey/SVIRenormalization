@@ -1,0 +1,1150 @@
+# ============================================================
+# 2024 ACS SOCIAL VULNERABILITY INDEX
+# CDC 2022 METHODOLOGY APPLIED TO 2024 ACS
+# This code calculates SVI for 2024 using the CDC's 2022 methodology. My study area is the eastern half of the U.S., but this code will work for any set of states
+# USE WITH CAUTION. The code is working, but there is no way to validate these results, as the 2024 SVI does not exist. Remember to set your working directory. 
+#
+# Geographic extent:
+# Eastern United States study region
+#
+# Output:
+#   EP_    = raw indicator percentages
+#   EPL_   = Eastern U.S. percentile ranks
+#   SPL_   = summed theme scores
+#   RPL_   = percentile-ranked theme/SVI scores
+#
+# ============================================================
+
+
+# ============================================================
+# 1. PACKAGES
+# ============================================================
+
+library(tidycensus)
+library(dplyr)
+library(tidyr)
+library(openxlsx)
+
+
+# ============================================================
+# 2. CENSUS API KEY
+# ============================================================
+#
+# If your API key is already stored in .Renviron, nothing
+# needs to be done here.
+#
+# If not, run this once:
+#
+# census_api_key(
+#   "YOUR_API_KEY",
+#   install = TRUE
+# )
+#
+# Then restart R.
+# ============================================================
+
+
+# ============================================================
+# 3. EASTERN U.S. STATES
+# ============================================================
+
+eus_states <- c(
+  "AL", "AR", "CT", "DE", "FL", "GA", "IL", "IN", "IA",
+  "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+  "MO", "NE", "NH", "NJ", "NY", "NC", "ND", "OH", "OK",
+  "PA", "RI", "SC", "SD", "TN", "TX", "VT", "VA", "WV",
+  "WI"
+)
+
+
+# ============================================================
+# 4. DEFINE ACS VARIABLES
+# ============================================================
+#
+# We use several ACS tables because the CDC indicators are
+# constructed from different ACS sources.
+#
+# ============================================================
+
+
+# ------------------------------------------------------------
+# A. ACS DATA PROFILE VARIABLES
+# ------------------------------------------------------------
+
+dp_vars <- c(
+
+  # Total population
+  total_pop = "DP05_0001",
+
+  # Persons age 17 and younger
+  age17 = "DP05_0019",
+
+  # White alone, not Hispanic or Latino
+  white_nonhispanic = "DP05_0096",
+
+  # Households
+  households = "DP02_0001",
+
+  # Single-parent households
+  single_parent_female = "DP02_0007",
+  single_parent_male   = "DP02_0011",
+
+  # Disability
+  disability_percent = "DP02_0072",
+
+  # Housing units
+  housing_units = "DP04_0001",
+
+  # Occupied housing units
+  occupied_units = "DP04_0002",
+
+  # 10-19 unit structures
+  units_10_19 = "DP04_0012",
+
+  # 20+ unit structures
+  units_20plus = "DP04_0013",
+
+  # Mobile homes
+  mobile_home = "DP04_0014",
+
+  # Crowding
+  crowd_1 = "DP04_0078",
+  crowd_2 = "DP04_0079",
+
+  # No vehicle available
+  no_vehicle = "DP04_0058"
+)
+
+
+# ------------------------------------------------------------
+# B. ACS SUBJECT TABLE VARIABLES
+# ------------------------------------------------------------
+
+subject_vars <- c(
+
+  # ----------------------------------------------------------
+  # POVERTY
+  # ----------------------------------------------------------
+
+  poverty_total = "S1701_C01_001",
+  poverty_150   = "S1701_C01_040",
+
+
+  # ----------------------------------------------------------
+  # HOUSING COST BURDEN
+  # ----------------------------------------------------------
+
+  hburd_total = "S2503_C01_001",
+
+  hburd_under20 =
+    "S2503_C01_028",
+
+  hburd_20_34999 =
+    "S2503_C01_032",
+
+  hburd_35_49999 =
+    "S2503_C01_036",
+
+  hburd_50_74999 =
+    "S2503_C01_040",
+
+
+  # ----------------------------------------------------------
+  # NO HIGH SCHOOL DIPLOMA
+  # ----------------------------------------------------------
+
+  nohs_percent =
+    "S0601_C01_033",
+
+
+  # ----------------------------------------------------------
+  # NO HEALTH INSURANCE
+  # ----------------------------------------------------------
+
+  uninsured_percent =
+    "S2701_C05_001",
+
+
+  # ----------------------------------------------------------
+  # AGE 65+
+  # ----------------------------------------------------------
+
+  age65_percent =
+    "S0101_C02_030"
+)
+
+
+# ------------------------------------------------------------
+# C. ACS DETAILED TABLE VARIABLES
+# ------------------------------------------------------------
+
+b_vars <- c(
+
+  # ----------------------------------------------------------
+  # UNEMPLOYMENT
+  #
+  # Civilian labor force
+  # Civilian unemployed
+  # ----------------------------------------------------------
+
+  labor_force =
+    "B23025_003",
+
+  unemployed =
+    "B23025_005",
+
+
+  # ----------------------------------------------------------
+  # LIMITED ENGLISH
+  # ----------------------------------------------------------
+
+  limeng_total =
+    "B16005_001",
+
+  limeng_007 =
+    "B16005_007",
+
+  limeng_008 =
+    "B16005_008",
+
+  limeng_012 =
+    "B16005_012",
+
+  limeng_013 =
+    "B16005_013",
+
+  limeng_017 =
+    "B16005_017",
+
+  limeng_018 =
+    "B16005_018",
+
+  limeng_022 =
+    "B16005_022",
+
+  limeng_023 =
+    "B16005_023",
+
+  limeng_029 =
+    "B16005_029",
+
+  limeng_030 =
+    "B16005_030",
+
+  limeng_034 =
+    "B16005_034",
+
+  limeng_035 =
+    "B16005_035",
+
+  limeng_039 =
+    "B16005_039",
+
+  limeng_040 =
+    "B16005_040",
+
+  limeng_044 =
+    "B16005_044",
+
+  limeng_045 =
+    "B16005_045",
+
+
+  # ----------------------------------------------------------
+  # GROUP QUARTERS
+  # ----------------------------------------------------------
+
+  group_quarters =
+    "B26001_001"
+)
+
+
+# ============================================================
+# 5. DOWNLOAD ACS DATA
+# ============================================================
+
+cat("\nDownloading 2024 ACS Data Profile...\n")
+
+dp_2024 <- get_acs(
+  geography = "county",
+  variables = dp_vars,
+  state = eus_states,
+  year = 2024,
+  survey = "acs5",
+  geometry = FALSE
+) %>%
+
+  select(
+    GEOID,
+    NAME,
+    variable,
+    estimate
+  ) %>%
+
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+
+cat("\nDownloading 2024 ACS Subject Tables...\n")
+
+subject_2024 <- get_acs(
+  geography = "county",
+  variables = subject_vars,
+  state = eus_states,
+  year = 2024,
+  survey = "acs5",
+  geometry = FALSE
+) %>%
+
+  select(
+    GEOID,
+    variable,
+    estimate
+  ) %>%
+
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+
+cat("\nDownloading 2024 ACS Detailed Tables...\n")
+
+b_2024 <- get_acs(
+  geography = "county",
+  variables = b_vars,
+  state = eus_states,
+  year = 2024,
+  survey = "acs5",
+  geometry = FALSE
+) %>%
+
+  select(
+    GEOID,
+    variable,
+    estimate
+  ) %>%
+
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+
+# ============================================================
+# 6. COMBINE ACS DATA
+# ============================================================
+
+acs2024 <- dp_2024 %>%
+
+  left_join(
+    subject_2024,
+    by = "GEOID"
+  ) %>%
+
+  left_join(
+    b_2024,
+    by = "GEOID"
+  )
+
+
+# ============================================================
+# 7. CHECK THE ACS DOWNLOAD
+# ============================================================
+
+cat("\n============================================\n")
+cat("ACS DOWNLOAD CHECK\n")
+cat("============================================\n")
+
+cat(
+  "Number of geographic units:",
+  nrow(acs2024),
+  "\n"
+)
+
+cat(
+  "Number of states:",
+  length(unique(substr(acs2024$GEOID, 1, 2))),
+  "\n"
+)
+
+cat(
+  "Missing GEOIDs:",
+  sum(is.na(acs2024$GEOID)),
+  "\n"
+)
+
+
+# ============================================================
+# 8. CHECK FOR MISSING INPUT VARIABLES
+# ============================================================
+
+input_vars <- c(
+
+  "total_pop",
+  "age17",
+  "white_nonhispanic",
+  "households",
+  "single_parent_female",
+  "single_parent_male",
+  "disability_percent",
+  "housing_units",
+  "occupied_units",
+  "units_10_19",
+  "units_20plus",
+  "mobile_home",
+  "crowd_1",
+  "crowd_2",
+  "no_vehicle",
+
+  "poverty_total",
+  "poverty_150",
+
+  "hburd_total",
+  "hburd_under20",
+  "hburd_20_34999",
+  "hburd_35_49999",
+  "hburd_50_74999",
+
+  "nohs_percent",
+  "uninsured_percent",
+  "age65_percent",
+
+  "labor_force",
+  "unemployed",
+
+  "limeng_total",
+  "limeng_007",
+  "limeng_008",
+  "limeng_012",
+  "limeng_013",
+  "limeng_017",
+  "limeng_018",
+  "limeng_022",
+  "limeng_023",
+  "limeng_029",
+  "limeng_030",
+  "limeng_034",
+  "limeng_035",
+  "limeng_039",
+  "limeng_040",
+  "limeng_044",
+  "limeng_045",
+
+  "group_quarters"
+)
+
+
+missing_input_check <- sapply(
+  acs2024[input_vars],
+  function(x) sum(is.na(x))
+)
+
+print(missing_input_check)
+
+
+# ============================================================
+# 9. CALCULATE THE 16 RAW SVI INDICATORS
+# ============================================================
+#
+# EP_ = estimated percentage
+#
+# Higher values indicate greater vulnerability.
+# ============================================================
+
+svi2024 <- acs2024 %>%
+
+  mutate(
+
+    # ========================================================
+    # THEME 1
+    # SOCIOECONOMIC STATUS
+    # ========================================================
+
+
+    # --------------------------------------------------------
+    # 1. BELOW 150% POVERTY
+    # --------------------------------------------------------
+
+    EP_POV150 =
+      (poverty_150 / poverty_total) * 100,
+
+
+    # --------------------------------------------------------
+    # 2. UNEMPLOYMENT
+    #
+    # Calculated from ACS counts instead of the problematic
+    # DP03_0009 variable.
+    # --------------------------------------------------------
+
+    EP_UNEMP =
+      (unemployed / labor_force) * 100,
+
+
+    # --------------------------------------------------------
+    # 3. HOUSING COST BURDEN
+    # --------------------------------------------------------
+
+    EP_HBURD =
+      (
+        hburd_under20 +
+        hburd_20_34999 +
+        hburd_35_49999 +
+        hburd_50_74999
+      ) /
+      hburd_total * 100,
+
+
+    # --------------------------------------------------------
+    # 4. NO HIGH SCHOOL DIPLOMA
+    # --------------------------------------------------------
+
+    EP_NOHSDP =
+      nohs_percent,
+
+
+    # --------------------------------------------------------
+    # 5. NO HEALTH INSURANCE
+    # --------------------------------------------------------
+
+    EP_UNINSUR =
+      uninsured_percent,
+
+
+    # ========================================================
+    # THEME 2
+    # HOUSEHOLD CHARACTERISTICS
+    # ========================================================
+
+
+    # --------------------------------------------------------
+    # 6. AGE 65+
+    # --------------------------------------------------------
+
+    EP_AGE65 =
+      age65_percent,
+
+
+    # --------------------------------------------------------
+    # 7. AGE 17 AND YOUNGER
+    # --------------------------------------------------------
+
+    EP_AGE17 =
+      (age17 / total_pop) * 100,
+
+
+    # --------------------------------------------------------
+    # 8. DISABILITY
+    # --------------------------------------------------------
+
+    EP_DISABL =
+      disability_percent,
+
+
+    # --------------------------------------------------------
+    # 9. SINGLE-PARENT HOUSEHOLDS
+    # --------------------------------------------------------
+
+    EP_SNGPNT =
+      (
+        single_parent_female +
+        single_parent_male
+      ) /
+      households * 100,
+
+
+    # --------------------------------------------------------
+    # 10. LIMITED ENGLISH
+    # --------------------------------------------------------
+
+    EP_LIMENG =
+      (
+        limeng_007 +
+        limeng_008 +
+        limeng_012 +
+        limeng_013 +
+        limeng_017 +
+        limeng_018 +
+        limeng_022 +
+        limeng_023 +
+        limeng_029 +
+        limeng_030 +
+        limeng_034 +
+        limeng_035 +
+        limeng_039 +
+        limeng_040 +
+        limeng_044 +
+        limeng_045
+      ) /
+      limeng_total * 100,
+
+
+    # ========================================================
+    # THEME 3
+    # RACIAL & ETHNIC MINORITY STATUS
+    # ========================================================
+
+
+    # --------------------------------------------------------
+    # 11. MINORITY
+    # --------------------------------------------------------
+
+    EP_MINRTY =
+      (
+        total_pop -
+        white_nonhispanic
+      ) /
+      total_pop * 100,
+
+
+    # ========================================================
+    # THEME 4
+    # HOUSING & TRANSPORTATION
+    # ========================================================
+
+
+    # --------------------------------------------------------
+    # 12. 10+ UNIT STRUCTURES
+    # --------------------------------------------------------
+
+    EP_MUNIT =
+      (
+        units_10_19 +
+        units_20plus
+      ) /
+      housing_units * 100,
+
+
+    # --------------------------------------------------------
+    # 13. MOBILE HOMES
+    # --------------------------------------------------------
+
+    EP_MOBILE =
+      mobile_home /
+      housing_units * 100,
+
+
+    # --------------------------------------------------------
+    # 14. CROWDING
+    # --------------------------------------------------------
+
+    EP_CROWD =
+      (
+        crowd_1 +
+        crowd_2
+      ) /
+      occupied_units * 100,
+
+
+    # --------------------------------------------------------
+    # 15. NO VEHICLE
+    # --------------------------------------------------------
+
+    EP_NOVEH =
+      no_vehicle /
+      occupied_units * 100,
+
+
+    # --------------------------------------------------------
+    # 16. GROUP QUARTERS
+    # --------------------------------------------------------
+
+    EP_GROUPQ =
+      group_quarters /
+      total_pop * 100
+  )
+
+
+# ============================================================
+# 10. LIST THE 16 INDICATORS
+# ============================================================
+
+ep_vars <- c(
+
+  "EP_POV150",
+  "EP_UNEMP",
+  "EP_HBURD",
+  "EP_NOHSDP",
+  "EP_UNINSUR",
+
+  "EP_AGE65",
+  "EP_AGE17",
+  "EP_DISABL",
+  "EP_SNGPNT",
+  "EP_LIMENG",
+
+  "EP_MINRTY",
+
+  "EP_MUNIT",
+  "EP_MOBILE",
+  "EP_CROWD",
+  "EP_NOVEH",
+  "EP_GROUPQ"
+)
+
+
+# ============================================================
+# 11. CHECK THE 16 INDICATORS BEFORE RANKING
+# ============================================================
+
+cat("\n============================================\n")
+cat("RAW INDICATOR CHECK\n")
+cat("============================================\n")
+
+indicator_missing <- sapply(
+  svi2024[ep_vars],
+  function(x) sum(is.na(x))
+)
+
+print(indicator_missing)
+
+
+# ============================================================
+# 12. CHECK FOR INVALID VALUES
+# ============================================================
+
+cat("\n============================================\n")
+cat("INDICATOR RANGE CHECK\n")
+cat("============================================\n")
+
+indicator_ranges <- svi2024 %>%
+
+  summarise(
+    across(
+      all_of(ep_vars),
+      list(
+        min = ~ min(.x, na.rm = TRUE),
+        max = ~ max(.x, na.rm = TRUE)
+      )
+    )
+  )
+
+print(indicator_ranges)
+
+
+# ============================================================
+# 13. REMOVE GEOGRAPHIES WITH INVALID SVI VALUES
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  filter(
+    total_pop > 0
+  ) %>%
+
+  filter(
+    if_all(
+      all_of(ep_vars),
+      ~ !is.na(.x)
+    )
+  )
+
+
+# ============================================================
+# 14. CONFIRM ROW COUNT
+# ============================================================
+
+cat("\n============================================\n")
+cat("ROWS AFTER SVI FILTER\n")
+cat("============================================\n")
+
+cat(
+  "Remaining geographic units:",
+  nrow(svi2024),
+  "\n"
+)
+
+
+# ============================================================
+# 15. CALCULATE EUS PERCENTILE RANKS
+# ============================================================
+#
+# EPL_ = Estimated Percentile
+#
+# Percentile ranking is performed across the entire EUS
+# study region, NOT nationally.
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  mutate(
+
+    # --------------------------------------------------------
+    # THEME 1
+    # --------------------------------------------------------
+
+    EPL_POV150 =
+      signif(percent_rank(EP_POV150), 4),
+
+    EPL_UNEMP =
+      signif(percent_rank(EP_UNEMP), 4),
+
+    EPL_HBURD =
+      signif(percent_rank(EP_HBURD), 4),
+
+    EPL_NOHSDP =
+      signif(percent_rank(EP_NOHSDP), 4),
+
+    EPL_UNINSUR =
+      signif(percent_rank(EP_UNINSUR), 4),
+
+
+    # --------------------------------------------------------
+    # THEME 2
+    # --------------------------------------------------------
+
+    EPL_AGE65 =
+      signif(percent_rank(EP_AGE65), 4),
+
+    EPL_AGE17 =
+      signif(percent_rank(EP_AGE17), 4),
+
+    EPL_DISABL =
+      signif(percent_rank(EP_DISABL), 4),
+
+    EPL_SNGPNT =
+      signif(percent_rank(EP_SNGPNT), 4),
+
+    EPL_LIMENG =
+      signif(percent_rank(EP_LIMENG), 4),
+
+
+    # --------------------------------------------------------
+    # THEME 3
+    # --------------------------------------------------------
+
+    EPL_MINRTY =
+      signif(percent_rank(EP_MINRTY), 4),
+
+
+    # --------------------------------------------------------
+    # THEME 4
+    # --------------------------------------------------------
+
+    EPL_MUNIT =
+      signif(percent_rank(EP_MUNIT), 4),
+
+    EPL_MOBILE =
+      signif(percent_rank(EP_MOBILE), 4),
+
+    EPL_CROWD =
+      signif(percent_rank(EP_CROWD), 4),
+
+    EPL_NOVEH =
+      signif(percent_rank(EP_NOVEH), 4),
+
+    EPL_GROUPQ =
+      signif(percent_rank(EP_GROUPQ), 4)
+  )
+
+
+# ============================================================
+# 16. CALCULATE THE FOUR THEME SCORES
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  mutate(
+
+    # --------------------------------------------------------
+    # THEME 1
+    # --------------------------------------------------------
+
+    SPL_THEME1 =
+      EPL_POV150 +
+      EPL_UNEMP +
+      EPL_HBURD +
+      EPL_NOHSDP +
+      EPL_UNINSUR,
+
+
+    # --------------------------------------------------------
+    # THEME 2
+    # --------------------------------------------------------
+
+    SPL_THEME2 =
+      EPL_AGE65 +
+      EPL_AGE17 +
+      EPL_DISABL +
+      EPL_SNGPNT +
+      EPL_LIMENG,
+
+
+    # --------------------------------------------------------
+    # THEME 3
+    # --------------------------------------------------------
+
+    SPL_THEME3 =
+      EPL_MINRTY,
+
+
+    # --------------------------------------------------------
+    # THEME 4
+    # --------------------------------------------------------
+
+    SPL_THEME4 =
+      EPL_MUNIT +
+      EPL_MOBILE +
+      EPL_CROWD +
+      EPL_NOVEH +
+      EPL_GROUPQ
+  )
+
+
+# ============================================================
+# 17. RANK THE FOUR THEMES
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  mutate(
+
+    RPL_THEME1 =
+      signif(percent_rank(SPL_THEME1), 4),
+
+    RPL_THEME2 =
+      signif(percent_rank(SPL_THEME2), 4),
+
+    RPL_THEME3 =
+      signif(percent_rank(SPL_THEME3), 4),
+
+    RPL_THEME4 =
+      signif(percent_rank(SPL_THEME4), 4)
+  )
+
+
+# ============================================================
+# 18. CALCULATE OVERALL SVI
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  mutate(
+
+    SPL_THEMES =
+      SPL_THEME1 +
+      SPL_THEME2 +
+      SPL_THEME3 +
+      SPL_THEME4,
+
+    RPL_THEMES =
+      signif(percent_rank(SPL_THEMES), 4)
+  )
+
+
+# ============================================================
+# 19. 90TH-PERCENTILE INDICATOR FLAGS
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  mutate(
+
+    F_POV150 =
+      ifelse(EPL_POV150 >= 0.90, 1, 0),
+
+    F_UNEMP =
+      ifelse(EPL_UNEMP >= 0.90, 1, 0),
+
+    F_HBURD =
+      ifelse(EPL_HBURD >= 0.90, 1, 0),
+
+    F_NOHSDP =
+      ifelse(EPL_NOHSDP >= 0.90, 1, 0),
+
+    F_UNINSUR =
+      ifelse(EPL_UNINSUR >= 0.90, 1, 0),
+
+    F_AGE65 =
+      ifelse(EPL_AGE65 >= 0.90, 1, 0),
+
+    F_AGE17 =
+      ifelse(EPL_AGE17 >= 0.90, 1, 0),
+
+    F_DISABL =
+      ifelse(EPL_DISABL >= 0.90, 1, 0),
+
+    F_SNGPNT =
+      ifelse(EPL_SNGPNT >= 0.90, 1, 0),
+
+    F_LIMENG =
+      ifelse(EPL_LIMENG >= 0.90, 1, 0),
+
+    F_MINRTY =
+      ifelse(EPL_MINRTY >= 0.90, 1, 0),
+
+    F_MUNIT =
+      ifelse(EPL_MUNIT >= 0.90, 1, 0),
+
+    F_MOBILE =
+      ifelse(EPL_MOBILE >= 0.90, 1, 0),
+
+    F_CROWD =
+      ifelse(EPL_CROWD >= 0.90, 1, 0),
+
+    F_NOVEH =
+      ifelse(EPL_NOVEH >= 0.90, 1, 0),
+
+    F_GROUPQ =
+      ifelse(EPL_GROUPQ >= 0.90, 1, 0)
+  )
+
+
+# ============================================================
+# 20. THEME FLAGS
+# ============================================================
+
+svi2024 <- svi2024 %>%
+
+  mutate(
+
+    F_THEME1 =
+      F_POV150 +
+      F_UNEMP +
+      F_HBURD +
+      F_NOHSDP +
+      F_UNINSUR,
+
+    F_THEME2 =
+      F_AGE65 +
+      F_AGE17 +
+      F_DISABL +
+      F_SNGPNT +
+      F_LIMENG,
+
+    F_THEME3 =
+      F_MINRTY,
+
+    F_THEME4 =
+      F_MUNIT +
+      F_MOBILE +
+      F_CROWD +
+      F_NOVEH +
+      F_GROUPQ,
+
+    F_TOTAL =
+      F_THEME1 +
+      F_THEME2 +
+      F_THEME3 +
+      F_THEME4
+  )
+
+
+# ============================================================
+# 21. FINAL QUALITY CONTROL
+# ============================================================
+
+cat("\n============================================\n")
+cat("FINAL 2024 EUS SVI\n")
+cat("============================================\n")
+
+cat(
+  "Number of geographic units:",
+  nrow(svi2024),
+  "\n"
+)
+
+cat(
+  "Number of states:",
+  length(unique(substr(svi2024$GEOID, 1, 2))),
+  "\n"
+)
+
+cat(
+  "Missing overall SVI:",
+  sum(is.na(svi2024$RPL_THEMES)),
+  "\n"
+)
+
+cat(
+  "Minimum SVI:",
+  min(svi2024$RPL_THEMES, na.rm = TRUE),
+  "\n"
+)
+
+cat(
+  "Maximum SVI:",
+  max(svi2024$RPL_THEMES, na.rm = TRUE),
+  "\n"
+)
+
+
+# ============================================================
+# 22. SUMMARY OF FINAL SVI
+# ============================================================
+
+summary(
+  svi2024 %>%
+    select(
+      RPL_THEME1,
+      RPL_THEME2,
+      RPL_THEME3,
+      RPL_THEME4,
+      RPL_THEMES
+    )
+)
+
+
+# ============================================================
+# 23. CREATE FINAL DATASET
+# ============================================================
+
+final_svi_2024 <- svi2024
+
+
+# ============================================================
+# 24. EXPORT TO CSV
+# ============================================================
+
+write.csv(
+  final_svi_2024,
+  "SVI_2024_EUS_CDC2022_Methodology.csv",
+  row.names = FALSE
+)
+
+
+# ============================================================
+# 25. EXPORT TO EXCEL
+# ============================================================
+
+write.xlsx(
+  final_svi_2024,
+  "SVI_2024_EUS_CDC2022_Methodology.xlsx",
+  overwrite = TRUE
+)
+
+
+# ============================================================
+# 26. CONFIRM FILE LOCATION
+# ============================================================
+
+cat("\n============================================\n")
+cat("FILES SAVED\n")
+cat("============================================\n")
+
+cat(
+  "Working directory:",
+  getwd(),
+  "\n"
+)
+
+cat(
+  "CSV:",
+  file.exists("SVI_2024_EUS_CDC2022_Methodology.csv"),
+  "\n"
+)
+
+cat(
+  "Excel:",
+  file.exists("SVI_2024_EUS_CDC2022_Methodology.xlsx"),
+  "\n"
+)
+
+
+# ============================================================
+# 27. FINAL COLUMN NAMES
+# ============================================================
+
+print(names(final_svi_2024))
