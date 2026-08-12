@@ -1,0 +1,240 @@
+# =========================================================
+# 2022 CDC SVI
+# RENORMALIZED TO EASTERN U.S. STUDY AREA
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. PACKAGES
+# ---------------------------------------------------------
+
+library(dplyr)
+library(readr)
+library(openxlsx)
+
+
+# ---------------------------------------------------------
+# 1. EASTERN U.S. STATES (My Study Area)
+# ---------------------------------------------------------
+
+eus_states <- c(
+  "AL", "AR", "CT", "DE", "FL", "GA", "IL", "IN", "IA",
+  "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+  "MO", "NE", "NH", "NJ", "NY", "NC", "ND", "OH", "OK",
+  "PA", "RI", "SC", "SD", "TN", "TX", "VT", "VA", "WV",
+  "WI"
+)
+
+
+# ---------------------------------------------------------
+# 2. LOAD THE OFFICIAL CDC 2022 COUNTY SVI
+# ---------------------------------------------------------
+
+# IMPORTANT:
+# Download the official 2022 US County CSV from CDC.
+#
+# Save it somewhere on your computer and replace the path
+# below with your actual file location.
+
+svi2022_raw <- read_csv(
+  "C:/YOUR/PATH/SVI2022_US_COUNTY.csv",
+  show_col_types = FALSE
+)
+
+
+# ---------------------------------------------------------
+# 3. KEEP ONLY YOUR EUS STATES
+# ---------------------------------------------------------
+
+svi2022_eus <- svi2022_raw %>%
+  filter(ST_ABBR %in% eus_states)
+
+
+# ---------------------------------------------------------
+# 4. CHECK THE NUMBER OF STATES / COUNTIES
+# ---------------------------------------------------------
+
+length(unique(svi2022_eus$ST_ABBR))
+
+nrow(svi2022_eus)
+
+sort(unique(svi2022_eus$ST_ABBR))
+
+
+# ---------------------------------------------------------
+# 5. RANK THE 16 INDIVIDUAL INDICATORS
+# ---------------------------------------------------------
+
+svi2022_eus <- svi2022_eus %>%
+  mutate(
+
+    # Theme 1
+    pov150_r  = percent_rank(EP_POV150),
+    unemp_r   = percent_rank(EP_UNEMP),
+    hburd_r   = percent_rank(EP_HBURD),
+    nohsdp_r  = percent_rank(EP_NOHSDP),
+    uninsur_r = percent_rank(EP_UNINSUR),
+
+    # Theme 2
+    age65_r   = percent_rank(EP_AGE65),
+    age17_r   = percent_rank(EP_AGE17),
+    disabl_r  = percent_rank(EP_DISABL),
+    sngpnt_r  = percent_rank(EP_SNGPNT),
+    limeng_r  = percent_rank(EP_LIMENG),
+
+    # Theme 3
+    minrty_r  = percent_rank(EP_MINRTY),
+
+    # Theme 4
+    munit_r   = percent_rank(EP_MUNIT),
+    mobile_r  = percent_rank(EP_MOBILE),
+    crowd_r   = percent_rank(EP_CROWD),
+    noveh_r   = percent_rank(EP_NOVEH),
+    groupq_r  = percent_rank(EP_GROUPQ)
+  )
+
+
+# ---------------------------------------------------------
+# 6. CALCULATE THE FOUR THEME SUMS
+# ---------------------------------------------------------
+
+svi2022_eus <- svi2022_eus %>%
+  mutate(
+
+    theme1 =
+      pov150_r +
+      unemp_r +
+      hburd_r +
+      nohsdp_r +
+      uninsur_r,
+
+    theme2 =
+      age65_r +
+      age17_r +
+      disabl_r +
+      sngpnt_r +
+      limeng_r,
+
+    theme3 =
+      minrty_r,
+
+    theme4 =
+      munit_r +
+      mobile_r +
+      crowd_r +
+      noveh_r +
+      groupq_r
+  )
+
+
+# ---------------------------------------------------------
+# 7. RANK THE FOUR THEMES
+# ---------------------------------------------------------
+
+svi2022_eus <- svi2022_eus %>%
+  mutate(
+
+    theme1_r = percent_rank(theme1),
+    theme2_r = percent_rank(theme2),
+    theme3_r = percent_rank(theme3),
+    theme4_r = percent_rank(theme4)
+  )
+
+
+# ---------------------------------------------------------
+# 8. CALCULATE OVERALL SVI
+# ---------------------------------------------------------
+
+svi2022_eus <- svi2022_eus %>%
+  mutate(
+
+    svi_sum =
+      theme1 +
+      theme2 +
+      theme3 +
+      theme4,
+
+    svi_index =
+      percent_rank(svi_sum)
+  )
+
+
+# ---------------------------------------------------------
+# 9. FINAL 2022 EUS DATASET
+# ---------------------------------------------------------
+
+final_svi_2022 <- svi2022_eus %>%
+  select(
+    FIPS,
+    ST_ABBR,
+    STATE,
+    COUNTY,
+
+    # Original CDC indicator percentages
+    EP_POV150,
+    EP_UNEMP,
+    EP_HBURD,
+    EP_NOHSDP,
+    EP_UNINSUR,
+
+    EP_AGE65,
+    EP_AGE17,
+    EP_DISABL,
+    EP_SNGPNT,
+    EP_LIMENG,
+
+    EP_MINRTY,
+
+    EP_MUNIT,
+    EP_MOBILE,
+    EP_CROWD,
+    EP_NOVEH,
+    EP_GROUPQ,
+
+    # EUS indicator percentile ranks
+    pov150_r,
+    unemp_r,
+    hburd_r,
+    nohsdp_r,
+    uninsur_r,
+
+    age65_r,
+    age17_r,
+    disabl_r,
+    sngpnt_r,
+    limeng_r,
+
+    minrty_r,
+
+    munit_r,
+    mobile_r,
+    crowd_r,
+    noveh_r,
+    groupq_r,
+
+    # Theme sums
+    theme1,
+    theme2,
+    theme3,
+    theme4,
+
+    # EUS theme rankings
+    theme1_r,
+    theme2_r,
+    theme3_r,
+    theme4_r,
+
+    # Overall EUS SVI
+    svi_sum,
+    svi_index
+  )
+
+
+# ---------------------------------------------------------
+# 10. EXPORT
+# ---------------------------------------------------------
+
+write.xlsx(
+  final_svi_2022,
+  "SVI_2022_EUS_Renormalized.xlsx",
+  overwrite = TRUE
+)
