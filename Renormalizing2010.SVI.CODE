@@ -1,0 +1,540 @@
+# =========================================================
+# 2010 CDC SVI
+# RENORMALIZED TO EASTERN U.S. STUDY AREA
+#
+# 2010 CDC SVI = 14 indicators
+#
+# Theme 1: Socioeconomic Status       = 4 indicators
+# Theme 2: Household Composition      = 3 indicators
+# Theme 3: Minority Status/Language   = 2 indicators
+# Theme 4: Housing/Transportation     = 5 indicators
+#
+# IMPORTANT:
+# This script does NOT use the CDC's original percentile
+# rankings. It recalculates all percentiles across the
+# Eastern U.S. study area.
+# =========================================================
+
+
+# ---------------------------------------------------------
+# 0. PACKAGES
+# ---------------------------------------------------------
+
+library(dplyr)
+library(readr)
+library(openxlsx)
+
+
+# ---------------------------------------------------------
+# 1. EASTERN U.S. STATES
+# ---------------------------------------------------------
+
+eus_states <- c(
+  "AL", "AR", "CT", "DE", "FL", "GA", "IL", "IN", "IA",
+  "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+  "MO", "NE", "NH", "NJ", "NY", "NC", "ND", "OH", "OK",
+  "PA", "RI", "SC", "SD", "TN", "TX", "VT", "VA", "WV",
+  "WI"
+)
+
+
+# ---------------------------------------------------------
+# 2. LOAD THE OFFICIAL CDC 2010 COUNTY SVI
+# ---------------------------------------------------------
+#
+# Download the official 2010 U.S. County SVI CSV from CDC.
+#
+# Replace the path below with the location of your file.
+#
+# Example:
+# "C:/Users/YourName/Documents/SVI2010_US_COUNTY.csv"
+#
+# ---------------------------------------------------------
+
+svi2010_raw <- read_csv(
+  "C:/PATH/TO/CSV/SVI_2010_US_COUNTY_OG.csv",
+  show_col_types = FALSE
+)
+
+
+# ---------------------------------------------------------
+# 3. CHECK THE AVAILABLE VARIABLES
+# ---------------------------------------------------------
+
+names(svi2010_raw)
+
+
+# ---------------------------------------------------------
+# 4. KEEP ONLY YOUR EUS STATES
+# ---------------------------------------------------------
+#
+# The 2010 CDC database uses ST.
+#
+# ---------------------------------------------------------
+
+svi2010_eus <- svi2010_raw %>%
+  filter(
+    ST %in% eus_states
+  )
+
+
+# ---------------------------------------------------------
+# 5. CHECK STUDY AREA
+# ---------------------------------------------------------
+
+cat(
+  "Number of states:",
+  length(unique(svi2010_eus$ST)),
+  "\n"
+)
+
+cat(
+  "Number of counties:",
+  nrow(svi2010_eus),
+  "\n"
+)
+
+sort(
+  unique(svi2010_eus$ST)
+)
+
+
+# ---------------------------------------------------------
+# 6. CHECK THE 2010 RAW INDICATORS
+# ---------------------------------------------------------
+#
+# The official CDC 2010 database provides the following
+# proportion variables:
+#
+# E_P_POV
+# E_P_UNEMP
+# E_PCI
+# E_P_NOHSDIP
+# P_AGE65
+# P_AGE17
+# P_SNGPRNT
+# P_MINORITY
+# E_P_LIMENG
+# E_P_MUNIT
+# E_P_MOBILE
+# E_P_CROWD
+# E_P_NOVEH
+# P_GROUPQ
+#
+# ---------------------------------------------------------
+
+svi2010_eus %>%
+  select(
+    E_P_POV,
+    E_P_UNEMP,
+    E_PCI,
+    E_P_NOHSDIP,
+    P_AGE65,
+    P_AGE17,
+    P_SNGPRNT,
+    P_MINORITY,
+    E_P_LIMENG,
+    E_P_MUNIT,
+    E_P_MOBILE,
+    E_P_CROWD,
+    E_P_NOVEH,
+    P_GROUPQ
+  ) %>%
+  summary()
+
+
+# ---------------------------------------------------------
+# 7. RANK THE 14 INDIVIDUAL INDICATORS
+# ---------------------------------------------------------
+#
+# IMPORTANT:
+#
+# For all indicators, higher values = greater vulnerability
+# EXCEPT per-capita income.
+#
+# Therefore:
+#
+#     low PCI = high vulnerability
+#
+# We reverse the PCI ranking using:
+#
+#     percent_rank(desc(E_PCI))
+#
+# ---------------------------------------------------------
+
+svi2010_eus <- svi2010_eus %>%
+  mutate(
+    
+    # =====================================================
+    # THEME 1: SOCIOECONOMIC STATUS
+    # =====================================================
+    
+    pov_r =
+      percent_rank(E_P_POV),
+    
+    unemp_r =
+      percent_rank(E_P_UNEMP),
+    
+    pci_r =
+      percent_rank(desc(E_PCI)),
+    
+    nohsdp_r =
+      percent_rank(E_P_NOHSDIP),
+    
+    
+    # =====================================================
+    # THEME 2: HOUSEHOLD COMPOSITION
+    # =====================================================
+    
+    age65_r =
+      percent_rank(P_AGE65),
+    
+    age17_r =
+      percent_rank(P_AGE17),
+    
+    sngpnt_r =
+      percent_rank(P_SNGPRNT),
+    
+    
+    # =====================================================
+    # THEME 3: MINORITY STATUS / LANGUAGE
+    # =====================================================
+    
+    minrty_r =
+      percent_rank(P_MINORITY),
+    
+    limeng_r =
+      percent_rank(E_P_LIMENG),
+    
+    
+    # =====================================================
+    # THEME 4: HOUSING / TRANSPORTATION
+    # =====================================================
+    
+    munit_r =
+      percent_rank(E_P_MUNIT),
+    
+    mobile_r =
+      percent_rank(E_P_MOBILE),
+    
+    crowd_r =
+      percent_rank(E_P_CROWD),
+    
+    noveh_r =
+      percent_rank(E_P_NOVEH),
+    
+    groupq_r =
+      percent_rank(P_GROUPQ)
+  )
+
+
+# ---------------------------------------------------------
+# 8. CALCULATE THE FOUR THEME SUMS
+# ---------------------------------------------------------
+
+svi2010_eus <- svi2010_eus %>%
+  mutate(
+    
+    # -----------------------------------------------------
+    # THEME 1
+    # -----------------------------------------------------
+    
+    theme1 =
+      pov_r +
+      unemp_r +
+      pci_r +
+      nohsdp_r,
+    
+    
+    # -----------------------------------------------------
+    # THEME 2
+    # -----------------------------------------------------
+    
+    theme2 =
+      age65_r +
+      age17_r +
+      sngpnt_r,
+    
+    
+    # -----------------------------------------------------
+    # THEME 3
+    # -----------------------------------------------------
+    
+    theme3 =
+      minrty_r +
+      limeng_r,
+    
+    
+    # -----------------------------------------------------
+    # THEME 4
+    # -----------------------------------------------------
+    
+    theme4 =
+      munit_r +
+      mobile_r +
+      crowd_r +
+      noveh_r +
+      groupq_r
+  )
+
+
+# ---------------------------------------------------------
+# 9. RANK THE FOUR THEMES
+# ---------------------------------------------------------
+
+svi2010_eus <- svi2010_eus %>%
+  mutate(
+    
+    theme1_r =
+      percent_rank(theme1),
+    
+    theme2_r =
+      percent_rank(theme2),
+    
+    theme3_r =
+      percent_rank(theme3),
+    
+    theme4_r =
+      percent_rank(theme4)
+  )
+
+
+# ---------------------------------------------------------
+# 10. CALCULATE OVERALL EUS SVI
+# ---------------------------------------------------------
+#
+# CDC 2010:
+#
+# Overall score =
+# Theme 1 sum +
+# Theme 2 sum +
+# Theme 3 sum +
+# Theme 4 sum
+#
+# Then percentile-rank the summed score.
+#
+# ---------------------------------------------------------
+
+svi2010_eus <- svi2010_eus %>%
+  mutate(
+    
+    svi_sum =
+      theme1 +
+      theme2 +
+      theme3 +
+      theme4,
+    
+    svi_index =
+      percent_rank(svi_sum)
+  )
+
+
+# ---------------------------------------------------------
+# 11. CHECK THE CALCULATIONS
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("2010 EUS SVI CHECK\n")
+cat("============================================\n")
+
+cat(
+  "States:",
+  length(unique(svi2010_eus$ST)),
+  "\n"
+)
+
+cat(
+  "Counties:",
+  nrow(svi2010_eus),
+  "\n"
+)
+
+cat(
+  "Missing overall SVI:",
+  sum(is.na(svi2010_eus$svi_index)),
+  "\n"
+)
+
+summary(
+  svi2010_eus$svi_index
+)
+
+
+# ---------------------------------------------------------
+# 12. CHECK THE 14 INDICATOR RANKINGS
+# ---------------------------------------------------------
+
+summary(
+  svi2010_eus %>%
+    select(
+      pov_r,
+      unemp_r,
+      pci_r,
+      nohsdp_r,
+      
+      age65_r,
+      age17_r,
+      sngpnt_r,
+      
+      minrty_r,
+      limeng_r,
+      
+      munit_r,
+      mobile_r,
+      crowd_r,
+      noveh_r,
+      groupq_r
+    )
+)
+
+
+# ---------------------------------------------------------
+# 13. FINAL 2010 EUS DATASET
+# ---------------------------------------------------------
+#
+# I am retaining both the original CDC proportions and
+# the newly calculated EUS percentile ranks.
+#
+# This makes the dataset easier to compare with your
+# 2022 and 2024 datasets.
+#
+# ---------------------------------------------------------
+
+final_svi_2010 <- svi2010_eus %>%
+  select(
+    
+    # -----------------------------------------------------
+    # Geographic identifiers
+    # -----------------------------------------------------
+    
+    FIPS,
+    ST,
+    LOCATION,
+    
+    
+    # =====================================================
+    # ORIGINAL 2010 CDC INDICATORS
+    # =====================================================
+    
+    # Theme 1
+    E_P_POV,
+    E_P_UNEMP,
+    E_PCI,
+    E_P_NOHSDIP,
+    
+    # Theme 2
+    P_AGE65,
+    P_AGE17,
+    P_SNGPRNT,
+    
+    # Theme 3
+    P_MINORITY,
+    E_P_LIMENG,
+    
+    # Theme 4
+    E_P_MUNIT,
+    E_P_MOBILE,
+    E_P_CROWD,
+    E_P_NOVEH,
+    P_GROUPQ,
+    
+    
+    # =====================================================
+    # EUS INDICATOR PERCENTILE RANKS
+    # =====================================================
+    
+    pov_r,
+    unemp_r,
+    pci_r,
+    nohsdp_r,
+    
+    age65_r,
+    age17_r,
+    sngpnt_r,
+    
+    minrty_r,
+    limeng_r,
+    
+    munit_r,
+    mobile_r,
+    crowd_r,
+    noveh_r,
+    groupq_r,
+    
+    
+    # =====================================================
+    # THEME SUMS
+    # =====================================================
+    
+    theme1,
+    theme2,
+    theme3,
+    theme4,
+    
+    
+    # =====================================================
+    # EUS THEME RANKINGS
+    # =====================================================
+    
+    theme1_r,
+    theme2_r,
+    theme3_r,
+    theme4_r,
+    
+    
+    # =====================================================
+    # OVERALL EUS SVI
+    # =====================================================
+    
+    svi_sum,
+    svi_index
+  )
+
+
+# ---------------------------------------------------------
+# 14. EXPORT TO EXCEL
+# ---------------------------------------------------------
+
+write.xlsx(
+  final_svi_2010,
+  "SVI_2010_EUS_Renormalized.xlsx",
+  overwrite = TRUE
+)
+
+
+# ---------------------------------------------------------
+# 15. EXPORT TO CSV
+# ---------------------------------------------------------
+
+write.csv(
+  final_svi_2010,
+  "SVI_2010_EUS_Renormalized.csv",
+  row.names = FALSE
+)
+
+
+# ---------------------------------------------------------
+# 16. CONFIRM FILES WERE CREATED
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("FILES SAVED\n")
+cat("============================================\n")
+
+cat(
+  "Excel:",
+  file.exists("SVI_2010_EUS_Renormalized.xlsx"),
+  "\n"
+)
+
+cat(
+  "CSV:",
+  file.exists("SVI_2010_EUS_Renormalized.csv"),
+  "\n"
+)
+
+cat(
+  "Working directory:",
+  getwd(),
+  "\n"
+)
