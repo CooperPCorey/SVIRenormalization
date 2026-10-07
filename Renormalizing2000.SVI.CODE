@@ -1,0 +1,671 @@
+# =========================================================
+# 2000 CDC SVI
+# RENORMALIZED TO EASTERN U.S. STUDY AREA
+#
+# 2000 CDC SVI = 15 indicators
+#
+# Theme 1: Socioeconomic Status       = 4 indicators
+# Theme 2: Household Composition/
+#          Disability                 = 4 indicators
+# Theme 3: Minority Status/Language   = 2 indicators
+# Theme 4: Housing/Transportation     = 5 indicators
+#
+# IMPORTANT:
+# This script does NOT use the CDC's original percentile
+# rankings (PL_, RPL_, or F_ variables).
+#
+# It recalculates all percentiles across the
+# Eastern U.S. study area.
+# =========================================================
+
+
+# ---------------------------------------------------------
+# 0. PACKAGES
+# ---------------------------------------------------------
+
+library(dplyr)
+library(readr)
+library(openxlsx)
+
+
+# ---------------------------------------------------------
+# 1. EASTERN U.S. STATES
+# ---------------------------------------------------------
+
+eus_states <- c(
+  "AL", "AR", "CT", "DE", "FL", "GA", "IL", "IN", "IA",
+  "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+  "MO", "NE", "NH", "NJ", "NY", "NC", "ND", "OH", "OK",
+  "PA", "RI", "SC", "SD", "TN", "TX", "VT", "VA", "WV",
+  "WI"
+)
+
+
+# ---------------------------------------------------------
+# 2. LOAD THE OFFICIAL CDC 2000 COUNTY SVI
+# ---------------------------------------------------------
+
+svi2000_raw <- read_csv(
+  "C:/PATH/TO/CSV//SVI_2000_US_COUNTY_OG.csv",
+  show_col_types = FALSE
+)
+
+
+# ---------------------------------------------------------
+# 3. CHECK THE AVAILABLE VARIABLES
+# ---------------------------------------------------------
+
+names(svi2000_raw)
+
+
+# ---------------------------------------------------------
+# 4. CHECK STATE IDENTIFIERS
+# ---------------------------------------------------------
+#
+# The 2000 dataset contains both:
+#
+# ST       = CDC state identifier
+# ST_ABBR  = two-letter state abbreviation
+#
+# We use ST_ABBR for filtering because our EUS state
+# vector contains two-letter abbreviations.
+#
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("STATE IDENTIFIER CHECK\n")
+cat("============================================\n")
+
+cat(
+  "Number of unique ST values:",
+  length(unique(svi2000_raw$ST)),
+  "\n"
+)
+
+cat(
+  "Number of unique ST_ABBR values:",
+  length(unique(svi2000_raw$ST_ABBR)),
+  "\n"
+)
+
+cat(
+  "EUS states found in ST_ABBR:",
+  sum(eus_states %in% unique(svi2000_raw$ST_ABBR)),
+  "of",
+  length(eus_states),
+  "\n"
+)
+
+
+# ---------------------------------------------------------
+# 5. KEEP ONLY YOUR EUS STATES
+# ---------------------------------------------------------
+#
+# IMPORTANT:
+# Use ST_ABBR rather than ST.
+#
+# ---------------------------------------------------------
+
+svi2000_eus <- svi2000_raw %>%
+  filter(
+    ST_ABBR %in% eus_states
+  )
+
+
+# ---------------------------------------------------------
+# 6. CHECK STUDY AREA
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("2000 EUS STUDY AREA\n")
+cat("============================================\n")
+
+cat(
+  "Number of states:",
+  length(unique(svi2000_eus$ST_ABBR)),
+  "\n"
+)
+
+cat(
+  "Number of counties:",
+  nrow(svi2000_eus),
+  "\n"
+)
+
+cat(
+  "Number of missing state abbreviations:",
+  sum(is.na(svi2000_eus$ST_ABBR)),
+  "\n"
+)
+
+cat("\nStates included:\n")
+
+print(
+  sort(unique(svi2000_eus$ST_ABBR))
+)
+
+
+# ---------------------------------------------------------
+# 7. CHECK THE 2000 RAW INDICATORS
+# ---------------------------------------------------------
+#
+# Theme 1: Socioeconomic Status
+# P_POV
+# P_UNEMP
+# P_PCI
+# P_NOHSDP
+#
+# Theme 2: Household Composition / Disability
+# P_AGE65
+# P_AGE17
+# P_DISABL
+# P_SNGPNT
+#
+# Theme 3: Minority Status / Language
+# P_MINRTY
+# P_LIMENG
+#
+# Theme 4: Housing / Transportation
+# P_MUNIT
+# P_MOBILE
+# P_CROWD
+# P_NOVEH
+# P_GROUPQ
+#
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("2000 RAW INDICATORS\n")
+cat("============================================\n")
+
+svi2000_eus %>%
+  select(
+    P_POV,
+    P_UNEMP,
+    P_PCI,
+    P_NOHSDP,
+    P_AGE65,
+    P_AGE17,
+    P_DISABL,
+    P_SNGPNT,
+    P_MINRTY,
+    P_LIMENG,
+    P_MUNIT,
+    P_MOBILE,
+    P_CROWD,
+    P_NOVEH,
+    P_GROUPQ
+  ) %>%
+  summary()
+
+
+# ---------------------------------------------------------
+# 8. RANK THE 15 INDIVIDUAL INDICATORS
+# ---------------------------------------------------------
+#
+# Higher values = greater vulnerability
+# EXCEPT per-capita income.
+#
+# Low P_PCI = high vulnerability.
+#
+# Therefore:
+#
+# percent_rank(desc(P_PCI))
+#
+# ---------------------------------------------------------
+
+svi2000_eus <- svi2000_eus %>%
+  mutate(
+
+    # =====================================================
+    # THEME 1: SOCIOECONOMIC STATUS
+    # =====================================================
+
+    pov_r =
+      percent_rank(P_POV),
+
+    unemp_r =
+      percent_rank(P_UNEMP),
+
+    pci_r =
+      percent_rank(desc(P_PCI)),
+
+    nohsdp_r =
+      percent_rank(P_NOHSDP),
+
+
+    # =====================================================
+    # THEME 2: HOUSEHOLD COMPOSITION / DISABILITY
+    # =====================================================
+
+    age65_r =
+      percent_rank(P_AGE65),
+
+    age17_r =
+      percent_rank(P_AGE17),
+
+    disabl_r =
+      percent_rank(P_DISABL),
+
+    sngpnt_r =
+      percent_rank(P_SNGPNT),
+
+
+    # =====================================================
+    # THEME 3: MINORITY STATUS / LANGUAGE
+    # =====================================================
+
+    minrty_r =
+      percent_rank(P_MINRTY),
+
+    limeng_r =
+      percent_rank(P_LIMENG),
+
+
+    # =====================================================
+    # THEME 4: HOUSING / TRANSPORTATION
+    # =====================================================
+
+    munit_r =
+      percent_rank(P_MUNIT),
+
+    mobile_r =
+      percent_rank(P_MOBILE),
+
+    crowd_r =
+      percent_rank(P_CROWD),
+
+    noveh_r =
+      percent_rank(P_NOVEH),
+
+    groupq_r =
+      percent_rank(P_GROUPQ)
+  )
+
+
+# ---------------------------------------------------------
+# 9. CALCULATE THE FOUR THEME SUMS
+# ---------------------------------------------------------
+
+svi2000_eus <- svi2000_eus %>%
+  mutate(
+
+    # -----------------------------------------------------
+    # THEME 1
+    # -----------------------------------------------------
+
+    theme1 =
+      pov_r +
+      unemp_r +
+      pci_r +
+      nohsdp_r,
+
+
+    # -----------------------------------------------------
+    # THEME 2
+    # -----------------------------------------------------
+
+    theme2 =
+      age65_r +
+      age17_r +
+      disabl_r +
+      sngpnt_r,
+
+
+    # -----------------------------------------------------
+    # THEME 3
+    # -----------------------------------------------------
+
+    theme3 =
+      minrty_r +
+      limeng_r,
+
+
+    # -----------------------------------------------------
+    # THEME 4
+    # -----------------------------------------------------
+
+    theme4 =
+      munit_r +
+      mobile_r +
+      crowd_r +
+      noveh_r +
+      groupq_r
+  )
+
+
+# ---------------------------------------------------------
+# 10. RANK THE FOUR THEMES
+# ---------------------------------------------------------
+
+svi2000_eus <- svi2000_eus %>%
+  mutate(
+
+    theme1_r =
+      percent_rank(theme1),
+
+    theme2_r =
+      percent_rank(theme2),
+
+    theme3_r =
+      percent_rank(theme3),
+
+    theme4_r =
+      percent_rank(theme4)
+  )
+
+
+# ---------------------------------------------------------
+# 11. CALCULATE OVERALL EUS SVI
+# ---------------------------------------------------------
+#
+# Overall score =
+#
+# Theme 1 sum +
+# Theme 2 sum +
+# Theme 3 sum +
+# Theme 4 sum
+#
+# Then percentile-rank the summed score.
+#
+# ---------------------------------------------------------
+
+svi2000_eus <- svi2000_eus %>%
+  mutate(
+
+    svi_sum =
+      theme1 +
+      theme2 +
+      theme3 +
+      theme4,
+
+    svi_index =
+      percent_rank(svi_sum)
+  )
+
+
+# ---------------------------------------------------------
+# 12. CHECK THE CALCULATIONS
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("2000 EUS SVI CHECK\n")
+cat("============================================\n")
+
+cat(
+  "States:",
+  length(unique(svi2000_eus$ST_ABBR)),
+  "\n"
+)
+
+cat(
+  "Counties:",
+  nrow(svi2000_eus),
+  "\n"
+)
+
+cat(
+  "Missing overall SVI:",
+  sum(is.na(svi2000_eus$svi_index)),
+  "\n"
+)
+
+cat("\nOverall EUS SVI summary:\n")
+
+summary(
+  svi2000_eus$svi_index
+)
+
+
+# ---------------------------------------------------------
+# 13. CHECK THE 15 INDICATOR RANKINGS
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("INDICATOR RANK CHECK\n")
+cat("============================================\n")
+
+summary(
+  svi2000_eus %>%
+    select(
+      pov_r,
+      unemp_r,
+      pci_r,
+      nohsdp_r,
+
+      age65_r,
+      age17_r,
+      disabl_r,
+      sngpnt_r,
+
+      minrty_r,
+      limeng_r,
+
+      munit_r,
+      mobile_r,
+      crowd_r,
+      noveh_r,
+      groupq_r
+    )
+)
+
+
+# ---------------------------------------------------------
+# 14. FINAL 2000 EUS DATASET
+# ---------------------------------------------------------
+#
+# Geographic identifiers are standardized to match your
+# other SVI datasets:
+#
+# FIPS     = 5-character county FIPS
+# ST       = two-letter state abbreviation
+# LOCATION = county name
+#
+# ---------------------------------------------------------
+
+final_svi_2000 <- svi2000_eus %>%
+  mutate(
+
+    # Standardize county FIPS to five-character text
+    FIPS = sprintf(
+      "%05d",
+      as.numeric(STCNTY)
+    ),
+
+    # Standardize state abbreviation
+    ST = ST_ABBR,
+
+    # Standardize county name field
+    LOCATION = COUNTY
+
+  ) %>%
+  select(
+
+    # -----------------------------------------------------
+    # Geographic identifiers
+    # -----------------------------------------------------
+
+    FIPS,
+    ST,
+    LOCATION,
+
+
+    # =====================================================
+    # ORIGINAL 2000 CDC INDICATORS
+    # =====================================================
+
+    # Theme 1
+    P_POV,
+    P_UNEMP,
+    P_PCI,
+    P_NOHSDP,
+
+    # Theme 2
+    P_AGE65,
+    P_AGE17,
+    P_DISABL,
+    P_SNGPNT,
+
+    # Theme 3
+    P_MINRTY,
+    P_LIMENG,
+
+    # Theme 4
+    P_MUNIT,
+    P_MOBILE,
+    P_CROWD,
+    P_NOVEH,
+    P_GROUPQ,
+
+
+    # =====================================================
+    # EUS INDICATOR PERCENTILE RANKS
+    # =====================================================
+
+    pov_r,
+    unemp_r,
+    pci_r,
+    nohsdp_r,
+
+    age65_r,
+    age17_r,
+    disabl_r,
+    sngpnt_r,
+
+    minrty_r,
+    limeng_r,
+
+    munit_r,
+    mobile_r,
+    crowd_r,
+    noveh_r,
+    groupq_r,
+
+
+    # =====================================================
+    # THEME SUMS
+    # =====================================================
+
+    theme1,
+    theme2,
+    theme3,
+    theme4,
+
+
+    # =====================================================
+    # EUS THEME RANKINGS
+    # =====================================================
+
+    theme1_r,
+    theme2_r,
+    theme3_r,
+    theme4_r,
+
+
+    # =====================================================
+    # OVERALL EUS SVI
+    # =====================================================
+
+    svi_sum,
+    svi_index
+  )
+
+
+# ---------------------------------------------------------
+# 15. FINAL DATASET CHECK
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("FINAL DATASET CHECK\n")
+cat("============================================\n")
+
+cat(
+  "Rows:",
+  nrow(final_svi_2000),
+  "\n"
+)
+
+cat(
+  "Columns:",
+  ncol(final_svi_2000),
+  "\n"
+)
+
+cat(
+  "Missing FIPS:",
+  sum(is.na(final_svi_2000$FIPS)),
+  "\n"
+)
+
+cat(
+  "Missing ST:",
+  sum(is.na(final_svi_2000$ST)),
+  "\n"
+)
+
+cat(
+  "Missing LOCATION:",
+  sum(is.na(final_svi_2000$LOCATION)),
+  "\n"
+)
+
+cat(
+  "Missing SVI:",
+  sum(is.na(final_svi_2000$svi_index)),
+  "\n"
+)
+
+cat("\nFirst six rows:\n")
+
+print(
+  head(final_svi_2000)
+)
+
+
+# ---------------------------------------------------------
+# 16. EXPORT TO EXCEL
+# ---------------------------------------------------------
+
+write.xlsx(
+  final_svi_2000,
+  "SVI_2000_EUS_Renormalized.xlsx",
+  overwrite = TRUE
+)
+
+
+# ---------------------------------------------------------
+# 17. EXPORT TO CSV
+# ---------------------------------------------------------
+
+write.csv(
+  final_svi_2000,
+  "SVI_2000_EUS_Renormalized.csv",
+  row.names = FALSE
+)
+
+
+# ---------------------------------------------------------
+# 18. CONFIRM FILES WERE CREATED
+# ---------------------------------------------------------
+
+cat("\n============================================\n")
+cat("FILES SAVED\n")
+cat("============================================\n")
+
+cat(
+  "Excel:",
+  file.exists("SVI_2000_EUS_Renormalized.xlsx"),
+  "\n"
+)
+
+cat(
+  "CSV:",
+  file.exists("SVI_2000_EUS_Renormalized.csv"),
+  "\n"
+)
+
+cat(
+  "Working directory:",
+  getwd(),
+  "\n"
+)
